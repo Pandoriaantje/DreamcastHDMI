@@ -20,9 +20,14 @@ except:
 
 template = env.get_template('JICsetup.cof.in')
 
-for project in (('FPGA-CycloneIV', 'DCx'), ('FPGA-CycloneIV-ADV7513', 'DCx'), ('FPGA-CycloneIV-ADV7513-Enhanced', 'DCxPlus')):
+for project in (
+    ('FPGA-CycloneIV', 'DCx', 'EP4CE6'), 
+    ('FPGA-CycloneIV-ADV7513', 'DCx', 'EP4CE6'), 
+    ('FPGA-CycloneIV-ADV7513-Enhanced', 'DCxPlus', 'EP4CE6')):
+    ('FPGA-10CL016-ADV7513-Enhanced', 'DCxPlus', '10CL016Y')):
+    ('FPGA-10CL025-ADV7513-Enhanced', 'DCxPlus', '10CL025Y')):
     for eprom in ('EPCS16', 'EPCS4'):
-        xml = template.render(eprom=eprom, output_filename='/srv/'+project[0]+'_'+eprom+'.jic', sof_filename='output_files/'+project[1]+'.sof')
+        xml = template.render(device=project[2], eprom=eprom, output_filename='/srv/'+project[0]+'_'+eprom+'.jic', sof_filename='output_files/'+project[1]+'.sof')
         with open("build/JICsetup_"+project[0]+"_"+eprom+".cof", "wb") as fh:
             fh.write(xml)
 
