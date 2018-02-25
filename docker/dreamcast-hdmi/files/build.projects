@@ -17,7 +17,7 @@ function doBuildProjects {
 	quartus_cpf -c /root/JIC/JICsetup_${DIR}_EPCS16.cof
 	quartus_cpf -c /root/JIC/JICsetup_${DIR}_EPCS4.cof
 	if [[ $DIR =~ FPGA-*-ADV7513-Enhanced ]] ; then
-	    quartus_cpf -c /root/JIC/firmware.cof
+	    quartus_cpf -c /root/JIC/firmware_${DIR}_EPCS16.cof
 	fi
     done
 }
