@@ -11,6 +11,7 @@ FPGA*/DCx.jdi
 FPGA*/DCx.map.rpt
 FPGA*/DCx.pin
 FPGA*/DCx.qws
+FPGA*/DCxPlus.qws
 FPGA*/DCx.sld
 FPGA*/DCx.sof
 FPGA*/c5_pin_model_dump.txt
@@ -39,3 +40,4 @@ docker/dreamcast-hdmi/support/build
 docker/dreamcast-hdmi/files/JIC.tgz
 *.rbf
 .vscode/
+FPGA*/*_early_pwr.csv
