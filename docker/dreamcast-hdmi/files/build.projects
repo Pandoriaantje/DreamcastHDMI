@@ -11,12 +11,17 @@ function doBuildProjects {
 	echo "$CWD/$DIR"
 	echo "----------------------------------------"
 
-	cd $CWD/$DIR
+	if [ -d $CWD/$DIR  ] ; then
 
-	quartus_sh --flow compile *.qpf
-	quartus_cpf -c /root/JIC/JICsetup_${DIR}_EPCS16.cof
-	if [[ $DIR =~ FPGA-.*-ADV7513-Enhanced ]] ; then
-	    quartus_cpf -c /root/JIC/firmware_${DIR}_EPCS16.cof
+	    cd $CWD/$DIR
+
+	    quartus_sh --flow compile *.qpf
+	    quartus_cpf -c /root/JIC/JICsetup_${DIR}_EPCS16.cof
+	    if [[ $DIR =~ FPGA-.*-ADV7513-Enhanced ]] ; then
+		quartus_cpf -c /root/JIC/firmware_${DIR}_EPCS16.cof
+	    fi
+	else
+	    echo "skipping $CWD/$DIR"
 	fi
     done
 }
