@@ -49,7 +49,7 @@ I2C I2C(
 
 (* syn_encoding = "safe" *) 
 reg [1:0] state;
-reg [2:0] cmd_counter;
+reg [3:0] cmd_counter;
 reg [5:0] subcmd_counter;
 
 reg VSYNC_reg = 0;
@@ -57,18 +57,19 @@ reg VSYNC_reg = 0;
 DebugData debugData = { 8'h00, 8'h00, 10'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00, 8'h00 };
 
 localparam CHIP_ADDR = 7'h39;
-localparam  s_start  = 0,
-            s_wait   = 1,
-            s_wait_2 = 2,
-            s_idle   = 3;
-localparam  cs_init     = 3'd0,
-            cs_init2    = 3'd1,
-            cs_debug    = 3'd2,
-            cs_pllcheck = 3'd3,
-            cs_pwrup    = 3'd4,
-            cs_pwrdown  = 3'd5,
-            cs_ctsdebug = 3'd6,
-            cs_ready    = 3'd7;
+localparam  s_start  = 2'd0,
+            s_wait   = 2'd1,
+            s_wait_2 = 2'd2,
+            s_idle   = 2'd3;
+localparam  cs_init      = 4'd0,
+            cs_init2     = 4'd1,
+            cs_debug     = 4'd2,
+            cs_pllcheck  = 4'd3,
+            cs_pwrup     = 4'd4,
+            cs_pwrdown   = 4'd5,
+            cs_ctsdebug  = 4'd6,
+            cs_ready     = 4'd7,
+            cs_not_ready = 4'd8;
 localparam  scs_start = 6'd0;
 
 reg hdmi_int_prev = 1;
@@ -106,11 +107,8 @@ always @ (posedge clk) begin
     end
 
     if (~reset) begin
-        state <= s_start;
-        cmd_counter <= cs_init;
-        subcmd_counter <= scs_start;
+        setStates(s_start, cs_init, 0);
         i2c_enable <= 1'b0;
-        ready <= 0;
     end else begin
         VSYNC_reg <= VSYNC;
         case (state)
@@ -119,24 +117,18 @@ always @ (posedge clk) begin
                 if (i2c_done) begin
                     
                     case (cmd_counter)
-                        // cs_init: adv7513_bootstrap(cs_pwrdown);
-                        // cs_pwrdown: adv7513_link_powerdown(cs_init2);
-                        // cs_init2: adv7513_init(cs_pllcheck);
-                        // cs_pllcheck: adv7513_pllcheck(cs_pwrup);
-                        // cs_pwrup: adv7513_link_powerup(cs_ready);
-                        cs_init: adv7513_bootstrap(cs_init2);
+
+                        cs_init: adv7513_hpdcheck(cs_pwrup, cs_pwrdown);
+                        cs_pwrup: adv7513_powerup(cs_init2);
                         cs_init2: adv7513_init(cs_pllcheck);
-                        cs_pllcheck: adv7513_pllcheck(cs_ready);
+                        cs_pllcheck: adv7513_pllcheck(cs_ready, cs_init);
+                        cs_pwrdown: adv7513_powerdown(cs_not_ready);
 
                         cs_debug: adv7513_debug(cs_ctsdebug);
                         cs_ctsdebug: adv7513_ctscheck(cs_ready);
 
-                        default: begin
-                            cmd_counter <= cs_init;
-                            subcmd_counter <= scs_start;
-                            state <= s_idle;
-                            ready <= 1;
-                        end
+                        cs_ready: setStates(s_idle, cs_init, 1);
+                        default: setStates(s_idle, cs_init, 0); // cs_not_ready
                     endcase
                 end
             end
@@ -159,14 +151,11 @@ always @ (posedge clk) begin
             s_idle: begin
                 if (hdmi_int_reg) begin
                     hdmi_int_reg <= 0;
-                    ready <= 0;
-                    state <= s_start;
-                    cmd_counter <= cs_init;
+                    setStates(s_start, cs_init, 0);
                     debugData.hdmi_int_processed_count <= debugData.hdmi_int_processed_count + 1'b1;
                 end else if (trigger_debug) begin
                     trigger_debug <= 0;
-                    state <= s_start;
-                    cmd_counter <= cs_debug;
+                    setStates(s_start, cs_debug, ready);
                     debugData.frame_counter <= debugData.frame_counter + 1'b1;
                 end
 
@@ -186,6 +175,18 @@ always @ (posedge clk) begin
         endcase
     end
 end
+
+task setStates;
+    input _state;
+    input _cmd_counter;
+    input _isReady;
+    begin
+        state <= _state;
+        cmd_counter <= _cmd_counter;
+        subcmd_counter <= scs_start;
+        ready <= _isReady;
+    end
+endtask
 
 task do_cts;
     output [7:0] cts_out;
@@ -253,7 +254,7 @@ endtask
 // ----------------------------------------------------------------
 
 task adv7513_init;
-    input [2:0] next_cmd;
+    input [3:0] next_cmd;
 
     begin
         case (subcmd_counter)
@@ -298,16 +299,16 @@ task adv7513_init;
             9: write_i2c(CHIP_ADDR, 16'h_02_18); // [7:0]  |--> [19:0]: audio clock regeneration N value, 44.1kHz@automatic CTS = 0x1880 (6272)
             10: write_i2c(CHIP_ADDR, 16'h_03_80); // [7:0] /
             11: write_i2c(CHIP_ADDR, 16'h_0B_0E); // [7]:   SPDIF enable = 0b0, disable
-                                                    // [6]:   audio clock polarity = 0b0, rising edge
-                                                    // [5]:   MCLK enable = 0b0, MCLK internally generated
-                                                    // [4:1]: fixed = 0b0111
+                                                  // [6]:   audio clock polarity = 0b0, rising edge
+                                                  // [5]:   MCLK enable = 0b0, MCLK internally generated
+                                                  // [4:1]: fixed = 0b0111
             12: write_i2c(CHIP_ADDR, 16'h_0C_05); // [7]:   audio sampling frequency select = 0b0, use sampling frequency from I2S stream
-                                                    // [6]:   channel status override = 0b0, use channel status bits from I2S stream
-                                                    // [5]:   I2S3 enable = 0b0, disabled
-                                                    // [4]:   I2S2 enable = 0b0, disabled
-                                                    // [3]:   I2S1 enable = 0b0, disabled
-                                                    // [2]:   I2S0 enable = 0b1, enabled
-                                                    // [1:0]: I2S format = 0b01, right justified mode
+                                                  // [6]:   channel status override = 0b0, use channel status bits from I2S stream
+                                                  // [5]:   I2S3 enable = 0b0, disabled
+                                                  // [4]:   I2S2 enable = 0b0, disabled
+                                                  // [3]:   I2S1 enable = 0b0, disabled
+                                                  // [2]:   I2S0 enable = 0b1, enabled
+                                                  // [1:0]: I2S format = 0b01, right justified mode
             13: write_i2c(CHIP_ADDR, 16'h_0D_10); // [4:0]: I2S bit width = 0b10000, 16bit
             14: write_i2c(CHIP_ADDR, { 8'h_3B, hdmiVideoConfig.adv_reg_3b });
                                                 // [7]:   fixed = 0b1
@@ -326,8 +327,8 @@ task adv7513_init;
     end
 endtask
 
-task adv7513_bootstrap;
-    input [2:0] next_cmd;
+task adv7513_powerup;
+    input [3:0] next_cmd;
 
     begin
         case (subcmd_counter)
@@ -370,28 +371,29 @@ task adv7513_bootstrap;
     end
 endtask
 
-task adv7513_link_powerdown;
-    input [2:0] next_cmd;
+task adv7513_powerdown;
+    input [3:0] next_cmd;
 
     begin
         case (subcmd_counter)
-            0: write_i2c(CHIP_ADDR, 16'h_D6_10);
-            1: write_i2c(CHIP_ADDR, 16'h_A1_3C);
-            default: begin
-                cmd_counter <= next_cmd;
-                subcmd_counter <= scs_start;
-            end
-        endcase
-    end
-endtask
-
-task adv7513_link_powerup;
-    input [2:0] next_cmd;
-
-    begin
-        case (subcmd_counter)
-            0: write_i2c(CHIP_ADDR, 16'h_A1_00);
-            1: write_i2c(CHIP_ADDR, 16'h_D6_00);
+            0: write_i2c(CHIP_ADDR, 16'h_41_50); // ADV7513 power down
+            1: write_i2c(CHIP_ADDR, 16'h_94_C0); // [7]:   HPD interrupt = 0b1, enabled
+                                                 // [6]:   monitor sense interrupt = 0b1, enabled
+                                                 // [5]:   vsync interrupt = 0b0, disabled
+                                                 // [4]:   audio fifo full interrupt = 0b0, disabled
+                                                 // [3]:   fixed = 0b0
+                                                 // [2]:   EDID ready interrupt = 0b0, disabled
+                                                 // [1]:   HDCP authenticated interrupt = 0b0, disabled
+                                                 // [0]:   fixed = 0b0
+            2: write_i2c(CHIP_ADDR, 16'h_96_C0); // [7]:   HPD interrupt = 0b1, interrupt detected
+                                                 // [6]:   monitor sense interrupt = 0b1, interrupt detected
+                                                 // [5]:   vsync interrupt = 0b0, no interrupt detected
+                                                 // [4]:   audio fifo full interrupt = 0b0, no interrupt detected
+                                                 // [3]:   fixed = 0b0
+                                                 // [2]:   EDID ready interrupt = 0b0, no interrupt detected
+                                                 // [1]:   HDCP authenticated interrupt = 0b0, no interrupt detected
+                                                 // [0]:   fixed = 0b0
+                                                 // -> clears interrupt state
             default: begin
                 cmd_counter <= next_cmd;
                 subcmd_counter <= scs_start;
@@ -401,19 +403,39 @@ task adv7513_link_powerup;
 endtask
 
 task adv7513_pllcheck;
-    input [2:0] next_cmd;
+    input [3:0] success_cmd;
+    input [3:0] failure_cmd;
 
     begin
         case (subcmd_counter)
             0: read_i2c(CHIP_ADDR, 8'h_9E);
             1: begin
                 if (i2c_data[4]) begin
-                    cmd_counter <= next_cmd;
+                    cmd_counter <= success_cmd;
                     subcmd_counter <= scs_start;
                 end else begin // loop until pll locks
+                    cmd_counter <= failure_cmd;
+                    subcmd_counter <= scs_start;
                     debugData.pll_errors <= debugData.pll_errors + 1'b1;
-                    //cmd_counter <= cs_pllcheck;
-                    cmd_counter <= cs_init;
+                end
+            end
+        endcase
+    end
+endtask
+
+task adv7513_hpdcheck;
+    input [3:0] success_cmd;
+    input [3:0] failure_cmd;
+
+    begin
+        case (subcmd_counter)
+            0: read_i2c(CHIP_ADDR, 8'h_42);
+            1: begin
+                if (i2c_data[6]) begin // HPD State is high
+                    cmd_counter <= success_cmd;
+                    subcmd_counter <= scs_start;
+                end else begin // powerdown
+                    cmd_counter <= failure_cmd;
                     subcmd_counter <= scs_start;
                 end
             end
@@ -422,7 +444,7 @@ task adv7513_pllcheck;
 endtask
 
 task adv7513_ctscheck;
-    input [2:0] next_cmd;
+    input [3:0] next_cmd;
 
     begin
         case (subcmd_counter)
@@ -452,7 +474,7 @@ task adv7513_ctscheck;
 endtask
 
 task adv7513_debug;
-    input [2:0] next_cmd;
+    input [3:0] next_cmd;
 
     begin
         case (subcmd_counter)
