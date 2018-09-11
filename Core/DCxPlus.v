@@ -338,14 +338,14 @@ ADV7513 adv7513(
 
 startup adv7513_startup_delay(
     .clock(hdmi_clock),
-    .nreset(pll_hdmi_locked),
+    .nreset(/*pll_hdmi_locked*/~fullcycle),
     .ready(adv7513_reset),
     .startup_delay(hdmiVideoConfig.startup_delay)
 );
 
 startup ram2video_startup_delay(
     .clock(hdmi_clock),
-    .nreset(adv7513_ready),
+    .nreset(pll_hdmi_locked/*adv7513_ready*/),
     .ready(ram2video_ready),
     .startup_delay(32'd0)
 );
@@ -361,7 +361,7 @@ text_ram text_ram_inst(
 
 i2cSlave i2cSlave(
     .clk(hdmi_clock),
-    .rst(~ram2video_ready),
+    .rst(/*~ram2video_ready*/~fullcycle),
     .sda(ESP_SDA),
     .scl(ESP_SCL),
     .ram_dataIn(text_wrdata),
